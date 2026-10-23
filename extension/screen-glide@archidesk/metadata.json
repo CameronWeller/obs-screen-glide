@@ -1,0 +1,6 @@
+{
+  "uuid": "screen-glide@archidesk",
+  "name": "Screen Glide Tracker",
+  "description": "Publishes the pointer and focused-window monitor for the OBS Screen Glide source.",
+  "shell-version": ["50"]
+}
