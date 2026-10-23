@@ -1,0 +1,9 @@
+Origin: obs-screen-glide
+Label: obs-screen-glide
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+SHA256:
+ 1fae2049b75572a75273900712ce8825c3c69c10f55df3301f99c3efc9b2dda5 758 main/binary-amd64/Packages
+ 0227e32c3c810f3c9dcf66cf5ee3524ee7d3b8729c94a5d26548cd850f51a995 495 main/binary-amd64/Packages.gz
