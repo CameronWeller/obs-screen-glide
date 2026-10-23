@@ -24,3 +24,11 @@ State file lines: `pointer N`, `focus N`, `mon N x y w h`. Override the path wit
 GPL-2.0-or-later, matching OBS Studio. See LICENSE.
 
 Status: pre-release; built against OBS 32.2.2 headers, not yet field-tested.
+
+## apt (native OBS on Ubuntu/Debian, amd64)
+    sudo curl -fsSLo /etc/apt/keyrings/obs-screen-glide.gpg https://cameronweller.github.io/obs-screen-glide/obs-screen-glide.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/obs-screen-glide.gpg] https://cameronweller.github.io/obs-screen-glide stable main" | sudo tee /etc/apt/sources.list.d/obs-screen-glide.list
+    sudo apt update && sudo apt install obs-screen-glide
+
+Not for the Flatpak OBS (it cannot see `/usr/lib`); use `scripts/install.sh` there.
+Maintainers: `scripts/publish-apt.sh <version>` builds, signs and pushes the repo to `gh-pages`.
