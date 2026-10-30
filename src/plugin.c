@@ -41,6 +41,9 @@ struct geo {
 struct sg {
 	obs_source_t *self;
 	gs_texrender_t *tr;
+	gs_texrender_t *tr_a, *tr_b;
+	gs_effect_t *fx;
+	int style;
 
 	uint32_t width, height;
 	int debounce_ms, anim_ms, force;
@@ -61,6 +64,65 @@ struct sg {
 	int pointer_mon, focus_mon;
 	struct geo geo[MAX_MONITORS];
 };
+
+static const char *anime_effect =
+	"uniform float4x4 ViewProj;\n"
+	"uniform texture2d tex_a;\n"
+	"uniform texture2d tex_b;\n"
+	"uniform float progress;\n"
+	"uniform float direction;\n"
+	"uniform float blur_len;\n"
+	"uniform float envelope;\n"
+	"sampler_state samp { Filter = Linear; AddressU = Clamp; AddressV = Clamp; };\n"
+	"struct VertData { float4 pos : POSITION; float2 uv : TEXCOORD0; };\n"
+	"VertData VSDefault(VertData v_in) {\n"
+	"  VertData o; o.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj); o.uv = v_in.uv; return o; }\n"
+	"float hash(float n) { return frac(sin(n * 127.1) * 43758.5453); }\n"
+	"float tri(float t) { return abs(frac(t) - 0.5) * 2.0; }\n"
+	/* Slanted, zig-zag (triangle-toothed) boundary the incoming screen sweeps in with. */
+	"float edge_at(float y) {\n"
+	"  float base = lerp(1.3, -0.3, progress);\n"
+	"  return base + 0.30 * (y - 0.5) + 0.07 * envelope * (tri(y * 6.0) - 0.5);\n"
+	"}\n"
+	"float4 comp(float2 uv) {\n"
+	"  float zoom = 0.045 * envelope;\n"
+	"  float2 q = (uv - 0.5) / (1.0 + zoom) + 0.5;\n"
+	"  float u = direction > 0.0 ? q.x : 1.0 - q.x;\n"
+	"  float m = smoothstep(-0.006, 0.006, u - edge_at(q.y));\n"
+	"  float4 a = tex_a.Sample(samp, q);\n"
+	"  float4 b = tex_b.Sample(samp, q);\n"
+	"  return lerp(a, b, m);\n"
+	"}\n"
+	"float4 PSAnime(VertData v_in) : TARGET {\n"
+	"  float2 uv = v_in.uv;\n"
+	"  float4 acc = float4(0.0, 0.0, 0.0, 0.0);\n"
+	"  for (int i = 0; i < 14; i++) {\n"
+	"    float t = (float(i) / 13.0 - 0.5) * blur_len;\n"
+	"    acc += comp(uv + float2(t, 0.0));\n"
+	"  }\n"
+	"  acc /= 14.0;\n"
+	/* Speed lines: long thin wedges along the travel axis, densest around the moving edge. */
+	"  float u = direction > 0.0 ? uv.x : 1.0 - uv.x;\n"
+	"  float y2 = uv.y + 0.16 * (u - 0.5);\n"
+	"  float rows = 48.0;\n"
+	"  float id = floor(y2 * rows);\n"
+	"  float f = frac(y2 * rows) - 0.5;\n"
+	"  float h1 = hash(id);\n"
+	"  float h2 = hash(id + 17.0);\n"
+	"  float h3 = hash(id + 41.0);\n"
+	"  float centre = edge_at(uv.y) + (h2 - 0.5) * 0.8;\n"
+	"  float len = 0.2 + 0.5 * h3;\n"
+	"  float taper = saturate(1.0 - abs(u - centre) / len);\n"
+	"  float hw = (0.05 + 0.40 * h1) * taper + 0.001;\n"
+	"  float line = (1.0 - smoothstep(hw * 0.25, hw, abs(f))) * step(0.4, h3);\n"
+	"  line *= envelope;\n"
+	"  acc.rgb = lerp(acc.rgb, float3(1.0, 1.0, 1.0), saturate(line * 0.9));\n"
+	"  acc.a = 1.0;\n"
+	"  return acc;\n"
+	"}\n"
+	"technique Draw {\n"
+	"  pass { vertex_shader = VSDefault(v_in); pixel_shader = PSAnime(v_in); }\n"
+	"}\n";
 
 static const char *get_name(void *unused)
 {
@@ -150,6 +212,13 @@ static void *create(obs_data_t *settings, obs_source_t *source)
 	s->focus_mon = -1;
 	obs_enter_graphics();
 	s->tr = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	s->tr_a = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	s->tr_b = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	char *err = NULL;
+	s->fx = gs_effect_create(anime_effect, "screen-glide-anime", &err);
+	if (!s->fx)
+		blog(LOG_ERROR, "[screen-glide] anime effect failed, using plain swoosh: %s", err ? err : "unknown");
+	bfree(err);
 	obs_leave_graphics();
 	obs_source_update(source, settings);
 	return s;
@@ -163,6 +232,10 @@ static void destroy(void *data)
 		bfree(s->name[i]);
 	obs_enter_graphics();
 	gs_texrender_destroy(s->tr);
+	gs_texrender_destroy(s->tr_a);
+	gs_texrender_destroy(s->tr_b);
+	if (s->fx)
+		gs_effect_destroy(s->fx);
 	obs_leave_graphics();
 	bfree(s);
 }
@@ -174,6 +247,7 @@ static void get_defaults(obs_data_t *d)
 	obs_data_set_default_int(d, "height", 1080);
 	obs_data_set_default_int(d, "debounce_ms", 450);
 	obs_data_set_default_int(d, "anim_ms", 700);
+	obs_data_set_default_int(d, "style", 1);
 	obs_data_set_default_int(d, "follow", 0);
 	obs_data_set_default_int(d, "force", 0);
 	for (int i = 0; i < MAX_SCREENS; i++) {
@@ -192,6 +266,7 @@ static void update(void *data, obs_data_t *d)
 	s->height = (uint32_t)obs_data_get_int(d, "height");
 	s->debounce_ms = (int)obs_data_get_int(d, "debounce_ms");
 	s->anim_ms = (int)obs_data_get_int(d, "anim_ms");
+	s->style = (int)obs_data_get_int(d, "style");
 	s->follow_focus = obs_data_get_int(d, "follow") == 0;
 	s->force = (int)obs_data_get_int(d, "force");
 	for (int i = 0; i < MAX_SCREENS; i++) {
@@ -250,6 +325,9 @@ static obs_properties_t *get_properties(void *data)
 	p = obs_properties_add_int_slider(pr, "debounce_ms", "Switch delay (ms)", 0, 3000, 25);
 	obs_property_set_long_description(p, "Pointer or focus must stay on a monitor this long before sliding");
 	obs_properties_add_int_slider(pr, "anim_ms", "Swipe duration (ms)", 100, 2000, 25);
+	p = obs_properties_add_list(pr, "style", "Transition style", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(p, "Swoosh (soft parallax)", 0);
+	obs_property_list_add_int(p, "Anime (speed lines, motion blur)", 1);
 
 	p = obs_properties_add_list(pr, "force", "Override", OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(p, "Automatic", 0);
@@ -388,6 +466,12 @@ static float swoosh(float t)
 	return 0.35f * smooth + 0.65f * out;
 }
 
+static float swoosh_speed(float t)
+{
+	float u = 1.0f - t;
+	return 0.35f * 6.0f * t * u + 0.65f * 4.0f * u * u * u;
+}
+
 static void draw_child(struct sg *s, obs_source_t *c, float dx, float scale)
 {
 	float cw = (float)obs_source_get_width(c);
@@ -416,11 +500,57 @@ static void dim(struct sg *s, float amount)
 		gs_draw_sprite(NULL, 0, s->width, s->height);
 }
 
+static void render_child_to(struct sg *s, gs_texrender_t *tr, obs_source_t *c)
+{
+	gs_texrender_reset(tr);
+	if (!gs_texrender_begin(tr, s->width, s->height))
+		return;
+	struct vec4 clear;
+	vec4_zero(&clear);
+	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
+	gs_ortho(0.0f, (float)s->width, 0.0f, (float)s->height, -100.0f, 100.0f);
+	gs_blend_state_push();
+	gs_blend_function_separate(GS_BLEND_SRCALPHA, GS_BLEND_INVSRCALPHA, GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+	draw_child(s, c, 0.0f, 1.0f);
+	gs_blend_state_pop();
+	gs_texrender_end(tr);
+}
+
+static bool render_anime(struct sg *s)
+{
+	if (!s->fx || !s->animating || s->prev < 0 || !s->child[s->prev])
+		return false;
+	render_child_to(s, s->tr_a, s->child[s->prev]);
+	render_child_to(s, s->tr_b, s->child[s->cur]);
+	gs_texture_t *ta = gs_texrender_get_texture(s->tr_a);
+	gs_texture_t *tb = gs_texrender_get_texture(s->tr_b);
+	if (!ta || !tb)
+		return false;
+
+	float t = fminf(s->anim_t, 1.0f);
+	gs_effect_set_texture(gs_effect_get_param_by_name(s->fx, "tex_a"), ta);
+	gs_effect_set_texture(gs_effect_get_param_by_name(s->fx, "tex_b"), tb);
+	gs_effect_set_float(gs_effect_get_param_by_name(s->fx, "progress"), swoosh(t));
+	gs_effect_set_float(gs_effect_get_param_by_name(s->fx, "direction"),
+			    s->pos[s->cur] >= s->pos[s->prev] ? 1.0f : -1.0f);
+	gs_effect_set_float(gs_effect_get_param_by_name(s->fx, "blur_len"), fminf(0.2f, 0.075f * swoosh_speed(t)));
+	gs_effect_set_float(gs_effect_get_param_by_name(s->fx, "envelope"), sinf(3.14159265f * swoosh(t)));
+
+	gs_blend_state_push();
+	gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+	while (gs_effect_loop(s->fx, "Draw"))
+		gs_draw_sprite(NULL, 0, s->width, s->height);
+	gs_blend_state_pop();
+	return true;
+}
+
 static void render(void *data, gs_effect_t *effect)
 {
 	UNUSED_PARAMETER(effect);
 	struct sg *s = data;
 	if (!s->width || !s->height || s->cur < 0 || !s->child[s->cur])
+		return;
+	if (s->style == 1 && render_anime(s))
 		return;
 
 	gs_texrender_reset(s->tr);
