@@ -204,6 +204,11 @@ static void update(void *data, obs_data_t *d)
 		snprintf(k, sizeof(k), "pos%d", i + 1);
 		s->pos[i] = (int)obs_data_get_int(d, k);
 	}
+	for (int i = 0; i < MAX_SCREENS; i++)
+		for (int j = i + 1; j < MAX_SCREENS; j++)
+			if (s->name[i] && *s->name[i] && strcmp(s->name[i], s->name[j]) == 0)
+				blog(LOG_WARNING, "[screen-glide] screens %d and %d use the same capture '%s'", i + 1, j + 1,
+				     s->name[i]);
 	resolve_children(s);
 	if (s->cur < 0 || !s->child[s->cur]) {
 		s->cur = -1;
