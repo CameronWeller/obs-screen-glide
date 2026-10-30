@@ -14,3 +14,20 @@ Description: OBS source that slides between monitors following the active one
 Filename: pool/main/o/obs-screen-glide/obs-screen-glide_0.1.0_amd64.deb
 Size: 32716
 SHA256: ab18f28f070ea4ea5f5c14a8ed9cd330ad30d58537fdc1bb69150e7f1a353b99
+
+Package: obs-screen-glide
+Version: 0.1.1
+Architecture: amd64
+Maintainer: Cameron Weller <20343009+CameronWeller@users.noreply.github.com>
+Depends: obs-studio, libc6 (>= 2.38)
+Recommends: gnome-shell
+Section: video
+Priority: optional
+Homepage: https://github.com/CameronWeller/obs-screen-glide
+Description: OBS source that slides between monitors following the active one
+ Screen Glide shows whichever monitor you are working on, sliding between
+ monitor-capture inputs with a debounced, swooshy animation instead of
+ switching scenes. Includes a GNOME Shell extension that reports the active monitor.
+Filename: pool/main/o/obs-screen-glide/obs-screen-glide_0.1.1_amd64.deb
+Size: 33222
+SHA256: 91cab18b7178bbdb4d9bcf6874b366728fcd9997d36cb461d0b879aa4839ad44

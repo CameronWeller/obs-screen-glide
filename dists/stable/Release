@@ -5,5 +5,5 @@ Codename: stable
 Architectures: amd64
 Components: main
 SHA256:
- 1fae2049b75572a75273900712ce8825c3c69c10f55df3301f99c3efc9b2dda5 758 main/binary-amd64/Packages
- 0227e32c3c810f3c9dcf66cf5ee3524ee7d3b8729c94a5d26548cd850f51a995 495 main/binary-amd64/Packages.gz
+ a6c5357e6aa649e27ddc6742e3477f187109161e00693ac2e2001f1ee1843b17 1517 main/binary-amd64/Packages
+ 04c7a58f6b41bad5cdd03cde3f9af64a2124aa2379a35a83d97e61924c5f9870 568 main/binary-amd64/Packages.gz
