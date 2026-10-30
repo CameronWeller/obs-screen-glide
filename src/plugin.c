@@ -418,6 +418,7 @@ static void render(void *data, gs_effect_t *effect)
 	if (!s->width || !s->height || s->cur < 0 || !s->child[s->cur])
 		return;
 
+	gs_texrender_reset(s->tr);
 	if (!gs_texrender_begin(s->tr, s->width, s->height))
 		return;
 	struct vec4 clear;
